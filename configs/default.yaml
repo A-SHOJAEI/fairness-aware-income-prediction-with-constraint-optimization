@@ -1,0 +1,82 @@
+# Default configuration for fairness-aware income prediction
+data:
+  dataset_name: "adult"
+  test_size: 0.2
+  val_size: 0.2
+  random_state: 42
+  protected_attribute: "sex"
+  target_column: "income"
+
+preprocessing:
+  handle_missing: true
+  encode_categorical: true
+  scale_numerical: true
+  feature_selection:
+    enabled: false
+    k_best: 20
+
+model:
+  algorithm: "lightgbm"
+  fairness_constraint:
+    enabled: true
+    demographic_parity_weight: 1.0
+    equalized_odds_weight: 0.5
+    max_unfairness_tolerance: 0.15
+
+  # Base LightGBM parameters
+  base_params:
+    objective: "binary"
+    metric: "auc"
+    boosting_type: "gbdt"
+    num_leaves: 31
+    learning_rate: 0.1
+    feature_fraction: 0.9
+    bagging_fraction: 0.8
+    bagging_freq: 5
+    verbose: -1
+    random_state: 42
+
+optimization:
+  framework: "optuna"
+  n_trials: 100
+  timeout: 3600  # 1 hour
+  direction: "maximize"  # maximize fairness-accuracy composite score
+
+  # Hyperparameter search space
+  search_space:
+    num_leaves: [10, 300]
+    learning_rate: [0.01, 0.3]
+    feature_fraction: [0.4, 1.0]
+    bagging_fraction: [0.4, 1.0]
+    max_depth: [3, 15]
+    min_child_samples: [5, 100]
+    lambda_l1: [0.0, 10.0]
+    lambda_l2: [0.0, 10.0]
+
+training:
+  cv_folds: 5
+  early_stopping_rounds: 50
+  verbose_eval: 100
+  use_mlflow: true
+  save_checkpoints: true
+
+evaluation:
+  metrics:
+    accuracy: true
+    auc_roc: true
+    precision: true
+    recall: true
+    f1_score: true
+    demographic_parity_ratio: true
+    equalized_odds_difference: true
+    calibration_score: true
+
+  target_metrics:
+    auc_roc: 0.89
+    demographic_parity_ratio: 0.85
+    equalized_odds_difference: 0.08
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/training.log"
