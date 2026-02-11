@@ -162,3 +162,21 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Auto-added by publisher
+# Training artifacts (auto-added by publisher)
+*.pt
+*.pth
+*.h5
+*.onnx
+*.bin
+*.safetensors
+wandb/
+data/*.arrow
+data/*.parquet
+data/*.h5
+data/*.hdf5
+data/raw/
+data/processed/
+outputs/
+.venv/

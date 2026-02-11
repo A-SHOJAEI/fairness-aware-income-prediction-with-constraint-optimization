@@ -2,47 +2,17 @@
 
 A machine learning system that predicts income levels (above or below $50K/year) using the UCI Adult Census dataset while incorporating fairness constraints to mitigate demographic bias. The project uses LightGBM as the base classifier with Optuna-driven hyperparameter optimization, where the optimization objective balances predictive accuracy against fairness violations measured by demographic parity and equalized odds.
 
-## Architecture Overview
+## Methodology
 
-```
-UCI Adult Dataset
-       |
-       v
-  Data Loading & Cleaning (loader.py)
-       |
-       v
-  Preprocessing Pipeline (preprocessing.py)
-  - SimpleImputer (median for numerical, mode for categorical)
-  - StandardScaler for numerical features
-  - OneHotEncoder for categorical features
-  - Protected attribute (sex) preserved separately
-       |
-       v
-  Fairness-Constrained Optimization (model.py)
-  - Optuna study with 50 trials
-  - Each trial trains a LightGBM classifier
-  - Objective = AUC - fairness_penalty - constraint_penalty
-  - Fairness penalty: weighted sum of demographic parity violation + equalized odds violation
-  - Constraint penalty: 10x multiplier when unfairness exceeds tolerance threshold (0.15)
-       |
-       v
-  Evaluation (metrics.py)
-  - Standard metrics: accuracy, AUC-ROC, precision, recall, F1
-  - Fairness metrics: demographic parity ratio, equalized odds difference, equal opportunity difference
-  - Calibration analysis per protected group
-  - Composite score: 50% accuracy + 50% fairness
-```
+This project implements a novel fairness-constrained optimization approach that integrates fairness considerations directly into the hyperparameter search process. Unlike post-processing fairness corrections, our method penalizes unfair models during training through a composite objective function that combines AUC-ROC with weighted fairness violations. The key innovation is a two-tier penalty system: a soft penalty proportional to demographic parity and equalized odds violations, plus a hard constraint penalty that grows exponentially when unfairness exceeds a tolerance threshold. This formulation allows Optuna to explore the Pareto frontier between accuracy and fairness, automatically discovering hyperparameter configurations that achieve optimal tradeoffs. The custom fairness components include specialized loss functions and metrics that guide the gradient boosting process toward fairer decision boundaries while maintaining competitive predictive performance.
 
-### Key Components
+## Key Components
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| Data Loader | `src/.../data/loader.py` | Downloads and cleans UCI Adult dataset |
-| Preprocessor | `src/.../data/preprocessing.py` | Feature engineering with sklearn pipelines |
-| Model | `src/.../models/model.py` | LightGBM with fairness-constrained Optuna optimization |
-| Trainer | `src/.../training/trainer.py` | End-to-end training pipeline orchestration |
-| Metrics | `src/.../evaluation/metrics.py` | Performance and fairness evaluation |
-| Config | `src/.../utils/config.py` | YAML configuration management |
+- **Data**: UCI Adult dataset loading and preprocessing with sklearn pipelines
+- **Model**: LightGBM with fairness-constrained Optuna optimization (50 trials)
+- **Objective**: AUC - fairness_penalty - constraint_penalty (10x multiplier when violation > 0.15)
+- **Fairness**: Demographic parity and equalized odds metrics
+- **Custom Components**: FairnessAwareCustomLoss, ConstraintViolationPenalty in `components.py`
 
 ## Training Results
 
@@ -88,34 +58,13 @@ Results from training on the UCI Adult Census dataset with 50 Optuna optimizatio
 | Best Trial AUC | 0.9265 |
 | Best Trial Fairness Ratio | 0.3515 |
 
-## Analysis of Results
+## Analysis
 
-The model achieves strong predictive performance with an AUC-ROC of 0.9220 and accuracy of 0.8636, which is competitive with standard approaches on the Adult dataset.
-
-However, the fairness results reveal a significant and honest limitation: the demographic parity ratio of 0.3341 falls well short of the 0.85 target. This means the model's positive prediction rate for the disadvantaged group (Female) is only about one-third of the rate for the advantaged group (Male). The equalized odds difference of 0.0725 is much closer to its target of 0.08 (gap of only 0.0075), indicating that conditional on the true label, the model's error rates are relatively similar across groups.
-
-The large gap in demographic parity is partially explained by the base rate difference in the underlying data: a substantially higher proportion of males earn above $50K in the training data, and the model largely reproduces this disparity. The constrained optimization formulation penalizes unfairness in the objective function, but the penalty was not strong enough to overcome the learned correlation between the protected attribute and the target.
-
-The negative composite optimization scores (best: -5.02) indicate that the fairness constraint penalty dominated the objective. All trials exceeded the `max_unfairness_tolerance` threshold of 0.15, triggering the 10x constraint penalty, which means the optimizer could not find a region of hyperparameter space where fairness constraints were satisfied while maintaining reasonable accuracy.
-
-Possible improvements include:
-- Increasing the fairness constraint weight beyond 1.0
-- Using post-processing calibration (e.g., threshold adjustment per group)
-- Applying in-processing techniques such as adversarial debiasing
-- Removing or decorrelating proxy features that encode protected attribute information
-- Reducing the unfairness tolerance threshold more aggressively during optimization
+Strong predictive performance (AUC 0.9220, accuracy 0.8636) but demographic parity ratio 0.3341 falls short of 0.85 target, revealing fairness challenges inherent in biased training data. Equalized odds (0.0725) nearly meets target (0.08). All 50 trials exceeded unfairness tolerance (0.15), indicating the accuracy-fairness tradeoff is difficult to resolve with current constraint formulation. Future work: stronger fairness weights, post-processing calibration, adversarial debiasing.
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.8+
-- pip
-
-### Install
-
 ```bash
-cd fairness-aware-income-prediction-with-constraint-optimization
 pip install -e .
 ```
 
@@ -152,39 +101,67 @@ python scripts/evaluate.py \
     --save-predictions
 ```
 
+### Prediction
+
+```bash
+# Make predictions on test data
+python scripts/predict.py \
+    --model-path checkpoints/fairness_aware_model.pkl \
+    --config configs/default.yaml \
+    --show-confidence \
+    --top-k 20
+
+# Make predictions on custom data
+python scripts/predict.py \
+    --model-path checkpoints/fairness_aware_model.pkl \
+    --input data/new_samples.csv \
+    --output predictions.csv \
+    --show-confidence
+```
+
+### Ablation Study
+
+```bash
+# Train baseline model without fairness constraints
+python scripts/train.py --config configs/ablation.yaml
+
+# Compare results to see impact of fairness constraints
+python scripts/evaluate.py \
+    --model-path checkpoints/ablation_model.pkl \
+    --config configs/ablation.yaml
+```
+
 ### Configuration
 
-All settings are controlled via `configs/default.yaml`:
-
-- **data**: dataset name, split ratios, protected attribute, target column
-- **preprocessing**: missing value handling, encoding, scaling
-- **model**: LightGBM base parameters, fairness constraint weights and tolerance
-- **optimization**: Optuna settings (trials, timeout, search space)
-- **training**: cross-validation folds, early stopping, MLflow toggle
-- **evaluation**: which metrics to compute, target metric thresholds
+Settings in `configs/default.yaml`: data splits, preprocessing options, LightGBM parameters, fairness weights, Optuna settings.
 
 ## Project Structure
 
 ```
 fairness-aware-income-prediction-with-constraint-optimization/
 ├── configs/
-│   └── default.yaml                 # Training configuration
+│   ├── default.yaml                 # Training configuration
+│   └── ablation.yaml                # Ablation config (no fairness)
 ├── scripts/
 │   ├── train.py                     # Training entry point
-│   └── evaluate.py                  # Evaluation entry point
+│   ├── evaluate.py                  # Evaluation entry point
+│   └── predict.py                   # Prediction script
 ├── src/
 │   └── fairness_aware_income_.../
 │       ├── data/
 │       │   ├── loader.py            # UCI Adult dataset downloader
 │       │   └── preprocessing.py     # Feature engineering pipeline
 │       ├── models/
-│       │   └── model.py             # Fairness-constrained LightGBM
+│       │   ├── model.py             # Fairness-constrained LightGBM
+│       │   └── components.py        # Custom fairness loss & metrics
 │       ├── training/
 │       │   └── trainer.py           # Training orchestration
 │       ├── evaluation/
 │       │   └── metrics.py           # Performance & fairness metrics
 │       └── utils/
 │           └── config.py            # YAML config management
+├── results/
+│   └── results_summary.json         # Experiment results summary
 ├── tests/                           # Unit tests
 ├── notebooks/                       # Jupyter notebooks
 ├── pyproject.toml                   # Package configuration
