@@ -11,7 +11,9 @@
     "n_val": 9045,
     "n_test": 9045,
     "n_features": 102,
-    "protected_attribute": "sex"
+    "protected_attribute": "sex",
+    "total_raw_samples": 48842,
+    "total_cleaned_samples": 45222
   },
 
   "optimization": {
@@ -21,16 +23,26 @@
     "timeout_seconds": 3600,
     "best_trial": 0,
     "best_composite_score": -5.1941,
-    "convergence_status": "timeout_after_2_trials"
+    "best_parameters": {
+      "num_leaves": 155,
+      "learning_rate": 0.2250,
+      "feature_fraction": 0.8297,
+      "bagging_fraction": 0.7993,
+      "max_depth": 4,
+      "min_child_samples": 84,
+      "lambda_l1": 7.4775,
+      "lambda_l2": 3.2820,
+      "n_estimators": 710
+    }
   },
 
   "metrics": {
     "test_performance": {
-      "auc_roc": 0.9219,
       "accuracy": 0.8653,
       "precision": 0.7732,
       "recall": 0.6463,
       "f1_score": 0.7041,
+      "auc_roc": 0.9219,
       "average_precision": 0.8158,
       "brier_score": 0.0941
     },

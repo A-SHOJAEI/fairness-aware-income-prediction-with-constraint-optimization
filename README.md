@@ -4,19 +4,26 @@ A machine learning system that predicts income levels (above or below $50K/year)
 
 ## Methodology
 
-This project implements a novel fairness-constrained optimization approach that integrates fairness considerations directly into the hyperparameter search process. Unlike post-processing fairness corrections, our method penalizes unfair models during training through a composite objective function that combines AUC-ROC with weighted fairness violations. The key innovation is a two-tier penalty system: a soft penalty proportional to demographic parity and equalized odds violations, plus a hard constraint penalty that grows exponentially when unfairness exceeds a tolerance threshold. This formulation allows Optuna to explore the Pareto frontier between accuracy and fairness, automatically discovering hyperparameter configurations that achieve optimal tradeoffs. The custom fairness components include specialized loss functions and metrics that guide the gradient boosting process toward fairer decision boundaries while maintaining competitive predictive performance.
+This project implements a fairness-constrained optimization approach that integrates fairness considerations directly into the hyperparameter search process. Unlike post-processing fairness corrections, this method penalizes unfair models during training through a composite objective function that combines AUC-ROC with weighted fairness violations.
+
+The key innovation is a two-tier penalty system:
+
+1. **Soft Penalty** -- proportional to demographic parity and equalized odds violations, applied continuously during optimization.
+2. **Hard Constraint Penalty** -- grows exponentially when unfairness exceeds a configurable tolerance threshold (default: 0.15), with a 10x multiplier that steers the optimizer away from severely biased configurations.
+
+This formulation allows Optuna to explore the Pareto frontier between accuracy and fairness, automatically discovering hyperparameter configurations that achieve optimal tradeoffs. Custom fairness components include specialized loss functions and metrics that guide the gradient boosting process toward fairer decision boundaries while maintaining competitive predictive performance.
 
 ## Key Components
 
-- **Data**: UCI Adult dataset loading and preprocessing with sklearn pipelines
-- **Model**: LightGBM with fairness-constrained Optuna optimization (50 trials)
-- **Objective**: AUC - fairness_penalty - constraint_penalty (10x multiplier when violation > 0.15)
-- **Fairness**: Demographic parity and equalized odds metrics
-- **Custom Components**: FairnessAwareCustomLoss, ConstraintViolationPenalty in `components.py`
+- **Data Pipeline**: UCI Adult dataset loading and preprocessing with scikit-learn pipelines (one-hot encoding, scaling, missing value handling)
+- **Model**: LightGBM gradient boosting classifier with fairness-constrained Optuna hyperparameter optimization
+- **Objective Function**: `AUC - fairness_penalty - constraint_penalty` (10x multiplier when violation exceeds 0.15)
+- **Fairness Metrics**: Demographic parity ratio, equalized odds difference, equal opportunity difference
+- **Custom Components**: `FairnessAwareCustomLoss` and `ConstraintViolationPenalty` in `src/.../models/components.py`
 
 ## Training Results
 
-Results from training on the UCI Adult Census dataset with 50 Optuna optimization trials:
+Results from training on the UCI Adult Census dataset with Optuna hyperparameter optimization (2 trials completed within a 1-hour timeout budget out of 100 requested).
 
 ### Dataset Statistics
 
@@ -31,36 +38,63 @@ Results from training on the UCI Adult Census dataset with 50 Optuna optimizatio
 
 | Metric | Value |
 |--------|-------|
-| AUC-ROC | 0.9220 |
-| Accuracy | 0.8636 |
-| Precision | 0.7707 |
-| Recall | 0.6401 |
-| F1-Score | 0.6993 |
+| AUC-ROC | 0.9219 |
+| Accuracy | 0.8653 |
+| Precision | 0.7732 |
+| Recall | 0.6463 |
+| F1-Score | 0.7041 |
 | Average Precision | 0.8158 |
-| Brier Score | 0.0942 |
+| Brier Score | 0.0941 |
 
 ### Fairness Metrics
 
-| Metric | Value | Target | Achieved |
-|--------|-------|--------|----------|
-| Demographic Parity Ratio | 0.3341 | 0.85 | No |
-| Demographic Parity Difference | 0.1757 | -- | -- |
-| Equalized Odds Difference | 0.0725 | 0.08 | No (gap: 0.0075) |
-| Equal Opportunity Difference | 0.0805 | -- | -- |
-| Composite Score | 0.7764 | -- | -- |
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Demographic Parity Ratio | 0.3112 | 0.85 | Not achieved |
+| Demographic Parity Difference | 0.1847 | -- | -- |
+| Equalized Odds Difference | 0.0858 | 0.08 | Near target (gap: 0.0058) |
+| Equal Opportunity Difference | 0.1013 | -- | -- |
+| Composite Score | 0.7673 | -- | -- |
 
 ### Optimization Summary
 
-| Metric | Value |
-|--------|-------|
-| Total Trials | 50 |
-| Best Trial Composite Score | -5.0225 |
-| Best Trial AUC | 0.9265 |
-| Best Trial Fairness Ratio | 0.3515 |
+| Parameter | Value |
+|-----------|-------|
+| Trials Completed | 2 / 100 (timeout at 1 hour) |
+| Best Trial | Trial 0 |
+| Best Trial Composite Score | -5.1941 |
+| Best Trial AUC | 0.9274 |
+| Best Trial Fairness Ratio | 0.3390 |
+
+### Best Hyperparameters
+
+| Parameter | Value |
+|-----------|-------|
+| num_leaves | 155 |
+| learning_rate | 0.2250 |
+| feature_fraction | 0.8297 |
+| bagging_fraction | 0.7993 |
+| max_depth | 4 |
+| min_child_samples | 84 |
+| lambda_l1 | 7.4775 |
+| lambda_l2 | 3.2820 |
+| n_estimators | 710 |
 
 ## Analysis
 
-Strong predictive performance (AUC 0.9220, accuracy 0.8636) but demographic parity ratio 0.3341 falls short of 0.85 target, revealing fairness challenges inherent in biased training data. Equalized odds (0.0725) nearly meets target (0.08). All 50 trials exceeded unfairness tolerance (0.15), indicating the accuracy-fairness tradeoff is difficult to resolve with current constraint formulation. Future work: stronger fairness weights, post-processing calibration, adversarial debiasing.
+The model achieves strong predictive performance with an AUC-ROC of 0.9219 and accuracy of 0.8653 on the held-out test set. However, the demographic parity ratio of 0.3112 falls substantially short of the 0.85 target, revealing the inherent difficulty of achieving demographic fairness on the UCI Adult dataset where significant base rate disparities exist across protected groups.
+
+The equalized odds difference of 0.0858 comes close to the 0.08 target (gap of only 0.0058), indicating that the model's true positive and false positive rates are relatively balanced across groups even though the overall selection rates differ.
+
+Both completed Optuna trials produced models that exceeded the unfairness tolerance threshold of 0.15, which triggers the hard constraint penalty. This suggests that the accuracy-fairness tradeoff on this dataset requires either stronger fairness weights, alternative debiasing strategies, or removal of proxy features that encode the protected attribute.
+
+### Future Directions
+
+- Increase the fairness constraint weight beyond 1.0 to more aggressively penalize unfair configurations
+- Apply post-processing calibration per protected group to equalize selection rates
+- Experiment with in-processing adversarial debiasing techniques
+- Identify and remove proxy features that encode the protected attribute (sex)
+- Extend the optimization budget to allow more Optuna trials to converge
 
 ## Installation
 
@@ -133,7 +167,7 @@ python scripts/evaluate.py \
 
 ### Configuration
 
-Settings in `configs/default.yaml`: data splits, preprocessing options, LightGBM parameters, fairness weights, Optuna settings.
+All training settings are managed through `configs/default.yaml`, including data splits, preprocessing options, LightGBM parameters, fairness constraint weights, and Optuna optimization settings.
 
 ## Project Structure
 
@@ -161,6 +195,7 @@ fairness-aware-income-prediction-with-constraint-optimization/
 │       └── utils/
 │           └── config.py            # YAML config management
 ├── results/
+│   ├── results.json                 # Full experiment results
 │   └── results_summary.json         # Experiment results summary
 ├── tests/                           # Unit tests
 ├── notebooks/                       # Jupyter notebooks
